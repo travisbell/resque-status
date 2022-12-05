@@ -147,13 +147,7 @@ module Resque
         # This is needed to be used with resque scheduler
         # http://github.com/bvandenbos/resque-scheduler
         def scheduled(queue, klass, *args)
-          if args.is_a?(Hash) || args.is_a?(ActiveSupport::HashWithIndifferentAccess)
-            self.enqueue_to(queue, self, *args)
-          else
-            uuid, options = args
-            self.enqueue_to(queue, klass, uuid, options)
-            uuid
-          end
+          self.enqueue_to(queue, self, *args)
         end
       end
 
