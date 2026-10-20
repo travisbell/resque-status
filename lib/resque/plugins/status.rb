@@ -186,12 +186,14 @@ module Resque
       # Set the jobs status. Can take an array of strings or hashes that are merged
       # (in order) into a final status hash.
       def status=(new_status)
-        Resque::Plugins::Status::Hash.set(uuid, *new_status)
+        @status = Resque::Plugins::Status::Hash.set(uuid, *new_status)
       end
 
-      # get the Resque::Plugins::Status::Hash object for the current uuid
+      # get the Resque::Plugins::Status::Hash object for the current uuid: as this
+      # instance last set it, or read from Redis. Every status update merges onto the
+      # current status, so keeping it saves reading it back before each one.
       def status
-        Resque::Plugins::Status::Hash.get(uuid)
+        @status ||= Resque::Plugins::Status::Hash.get(uuid)
       end
 
       def name

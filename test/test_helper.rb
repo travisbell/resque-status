@@ -2,38 +2,49 @@ require 'bundler/setup'
 require 'resque-status'
 
 require 'minitest/autorun'
-require 'mocha/setup'
-
-#
-# make sure we can run redis
-#
-
-if !system("which redis-server")
-  puts '', "** can't find `redis-server` in your path"
-  puts "** try running `sudo rake install`"
-  abort ''
+begin
+  require 'mocha/minitest'
+rescue LoadError
+  require 'mocha/setup' # mocha < 1.0
 end
 
-#
-# start our own redis when the tests start,
-# kill it when they end
-#
+if ENV['REDIS_URL']
+  # A disposable server (the tests flush it), e.g. `docker run --rm -p 9736:6379 redis`.
+  Resque.redis = ENV['REDIS_URL']
+else
+  #
+  # make sure we can run redis
+  #
 
-
-class << Minitest
-  def exit(*args)
-    pid = `ps -e -o pid,command | grep [r]edis.*9736`.split(" ")[0]
-    puts "Killing test redis server..."
-    Process.kill("KILL", pid.to_i)
-    super
+  if !system("which redis-server")
+    puts '', "** can't find `redis-server` in your path, or set REDIS_URL to a disposable server"
+    puts "** try running `sudo rake install`"
+    abort ''
   end
-end
 
-dir = File.expand_path("../", __FILE__)
-puts "Starting redis for testing at localhost:9736..."
-result = `rm -f #{dir}/dump.rdb && redis-server #{dir}/redis-test.conf`
-raise "Redis failed to start: #{result}" unless $?.success?
-Resque.redis = 'localhost:9736/1'
+  #
+  # start our own redis when the tests start,
+  # kill it when they end
+  #
+
+  class << Minitest
+    def exit(*args)
+      pid = `ps -e -o pid,command | grep [r]edis.*9736`.split(" ")[0]
+      # Without a pid, Process.kill would signal this whole process group.
+      if pid
+        puts "Killing test redis server..."
+        Process.kill("KILL", pid.to_i)
+      end
+      super
+    end
+  end
+
+  dir = File.expand_path("../", __FILE__)
+  puts "Starting redis for testing at localhost:9736..."
+  result = `rm -f #{dir}/dump.rdb && redis-server #{dir}/redis-test.conf`
+  raise "Redis failed to start: #{result}" unless $?.success?
+  Resque.redis = 'localhost:9736/1'
+end
 
 #### Fixtures
 

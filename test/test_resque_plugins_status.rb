@@ -150,7 +150,7 @@ class TestResquePluginsStatus < Minitest::Test
 
       it "set the status" do
         assert @performed.status.is_a?(Resque::Plugins::Status::Hash)
-        assert_equal 'WorkingJob({"num"=>100})', @performed.status.name
+        assert_equal "WorkingJob(#{{ "num" => 100 }.inspect})", @performed.status.name
       end
 
       describe "before" do
@@ -176,7 +176,7 @@ class TestResquePluginsStatus < Minitest::Test
 
       it "set the status" do
         assert @performed.status.is_a?(Resque::Plugins::Status::Hash)
-        assert_equal 'FailureJob({"num"=>100})', @performed.status.name
+        assert_equal "FailureJob(#{{ "num" => 100 }.inspect})", @performed.status.name
       end
 
       it "be failed" do
@@ -184,6 +184,40 @@ class TestResquePluginsStatus < Minitest::Test
         assert @performed.status.failed?
       end
 
+    end
+
+    describe "Redis round trips" do
+      def calls(stats, command)
+        stats.dig(command, "calls").to_i
+      end
+
+      def commandstats
+        Resque.redis.redis.config(:resetstat)
+        yield
+        Resque.redis.redis.info("commandstats")
+      end
+
+      it "writes a status with its expiry in one command" do
+        Resque::Plugins::Status::Hash.expire_in = 60
+        stats = commandstats { WorkingJob.create('num' => 1) }
+
+        assert_equal 1, calls(stats, "set")
+        assert_equal 0, calls(stats, "expire")
+      ensure
+        Resque::Plugins::Status::Hash.expire_in = nil
+      end
+
+      it "reads a job's status once, however often it's updated" do
+        WorkingJob.create('num' => 1)
+        payload = Resque.pop(:statused)
+
+        stats = commandstats { WorkingJob.perform(*payload['args']) }
+
+        assert_equal 1, calls(stats, "get")
+        # Working, at(1, 1) and completed.
+        assert_equal 3, calls(stats, "set")
+        assert Resque::Plugins::Status::Hash.get(payload['args'].first).completed?
+      end
     end
 
     describe "killing a job" do
@@ -252,6 +286,8 @@ class TestResquePluginsStatus < Minitest::Test
       before do
         @uuid1    = KillableJob.create(:num => 100)
         @uuid2    = KillableJob.create(:num => 100)
+        # Created in the same second, they'd tie and be ordered by UUID instead.
+        Resque.redis.zadd(Resque::Plugins::Status::Hash.set_key, Time.now.to_i - 1, @uuid1)
 
         Resque::Plugins::Status::Hash.killall(0,0) # only @uuid2 it be killed
 

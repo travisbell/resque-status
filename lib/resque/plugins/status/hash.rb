@@ -12,9 +12,14 @@ module Resque
         # Create a status, generating a new UUID, passing the message to the status
         # Returns the UUID of the new status.
         def self.create(uuid, *messages)
-          set(uuid, *messages)
-          redis.zadd(set_key, Time.now.to_i, uuid)
-          redis.zremrangebyscore(set_key, 0, Time.now.to_i - @expire_in) if @expire_in
+          val = Resque::Plugins::Status::Hash.new(uuid, *messages)
+          now = Time.now.to_i
+          # One round trip, rather than one per command.
+          redis.pipelined do |pipeline|
+            pipeline.set(status_key(uuid), encode(val), ex: expire_in)
+            pipeline.zadd(set_key, now, uuid)
+            pipeline.zremrangebyscore(set_key, 0, now - expire_in) if expire_in
+          end
           uuid
         end
 
@@ -39,10 +44,7 @@ module Resque
         # that are merged in order to create a single status.
         def self.set(uuid, *messages)
           val = Resque::Plugins::Status::Hash.new(uuid, *messages)
-          redis.set(status_key(uuid), encode(val))
-          if expire_in
-            redis.expire(status_key(uuid), expire_in)
-          end
+          redis.set(status_key(uuid), encode(val), ex: expire_in)
           val
         end
 
@@ -77,8 +79,10 @@ module Resque
         end
 
         def self.remove(uuid)
-          redis.del(status_key(uuid))
-          redis.zrem(set_key, uuid)
+          redis.pipelined do |pipeline|
+            pipeline.del(status_key(uuid))
+            pipeline.zrem(set_key, uuid)
+          end
         end
 
         def self.count
