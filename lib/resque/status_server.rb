@@ -5,7 +5,9 @@ module Resque
   module StatusServer
 
     VIEW_PATH = File.join(File.dirname(__FILE__), 'server', 'views')
+    OVERRIDE_VIEW_PATH = File.join(VIEW_PATH, 'overrides')
     PER_PAGE = 50
+    UUID_PATTERN = /\A\h{32}\z/
 
     def self.registered(app)
 
@@ -66,6 +68,28 @@ module Resque
 
         def status_view(filename, options = {}, locals = {})
           erb(File.read(File.join(::Resque::StatusServer::VIEW_PATH, "#{filename}.erb")), options, locals)
+        end
+
+        # Look for Resque's own views in OVERRIDE_VIEW_PATH first.
+        def find_template(views, name, engine, &block)
+          super(::Resque::StatusServer::OVERRIDE_VIEW_PATH, name, engine, &block)
+          super
+        end
+
+        # Resque renders a job's class with the job_class partial (overview,
+        # working and workers), so link status jobs to their status page.
+        def partial(template, local_vars = {})
+          html = super
+          if template.to_sym == :job_class && (uuid = status_uuid(local_vars[:job]))
+            html += " <small><a href=\"#{h u("/statuses/#{uuid}")}\">status</a></small>"
+          end
+          html
+        end
+
+        # Status jobs are enqueued with (uuid, options) as their args.
+        def status_uuid(payload)
+          uuid, options = payload['args'] if payload.is_a?(::Hash) && payload['args'].is_a?(Array)
+          uuid if uuid.is_a?(String) && uuid.match?(::Resque::StatusServer::UUID_PATTERN) && options.is_a?(::Hash)
         end
 
         def status_poll(start)

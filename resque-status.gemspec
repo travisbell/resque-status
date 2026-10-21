@@ -32,6 +32,7 @@ Gem::Specification.new do |s|
     'lib/resque/job_with_status.rb',
     'lib/resque/plugins/status.rb',
     'lib/resque/plugins/status/hash.rb',
+    'lib/resque/server/views/overrides/working.erb',
     'lib/resque/server/views/status.erb',
     'lib/resque/server/views/status_styles.erb',
     'lib/resque/server/views/statuses.erb',
