@@ -86,10 +86,14 @@ module Resque
           html
         end
 
-        # Status jobs are enqueued with (uuid, options) as their args.
+        # Status jobs are enqueued with (uuid, options) as their args. Options
+        # can be anything a job's create was passed, not just a hash.
         def status_uuid(payload)
-          uuid, options = payload['args'] if payload.is_a?(::Hash) && payload['args'].is_a?(Array)
-          uuid if uuid.is_a?(String) && uuid.match?(::Resque::StatusServer::UUID_PATTERN) && options.is_a?(::Hash)
+          args = payload['args'] if payload.is_a?(::Hash)
+          return unless args.is_a?(Array) && args.size == 2
+
+          uuid = args.first
+          uuid if uuid.is_a?(String) && uuid.match?(::Resque::StatusServer::UUID_PATTERN)
         end
 
         def status_poll(start)
